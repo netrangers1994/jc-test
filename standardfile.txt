@@ -1,0 +1,204 @@
+Option Explicit
+
+
+Sub DataImport()
+
+
+Dim WbSou As Workbook           'Data Source Workbook
+Dim WbRep As Workbook           'Final Report Workbook
+Dim Wb As Workbook              'This Workbook
+Dim Men As Worksheet            'Main Menu Sheet
+Dim Sht As Worksheet            'Generic Employee Sheet
+Dim Tem As Worksheet            'Template sheet
+Dim Sou As Worksheet            'Source Sheet
+Dim Resp As String              'User's response
+Dim i As Long, iMax As Long     'Row Counter in Source Sheet
+Dim j As Long, jMax As Long     'Row Counter in Generic Employee Sheet
+Dim StartRow As Long            'Details Start Row
+Dim TotalRow As Long            'Total Payment Row
+Dim JsonResponse As Object      'Json Response
+Dim JsonItem As Variant         'Json Item
+
+'Set workbook and worksheet
+Set Wb = ThisWorkbook
+Set Men = Wb.Sheets("Menu")
+Set Tem = Wb.Sheets("Template")
+
+StartRow = Men.Range("J9")
+TotalRow = Men.Range("J11")
+
+''Status
+'Men.Range("E9:E10").Value = ""
+
+'-------------
+' File Picker
+'-------------
+
+Dim fd As Office.FileDialog     'File Dialog
+Dim strFile As String           'CSV File Name and Path
+
+'Set File Dialog
+Set fd = Application.FileDialog(msoFileDialogFilePicker)
+
+'Set Picker Options
+With fd
+    .Filters.Clear
+    .Filters.Add "Excel Files", "*.xlsx,*.xls", 1
+    .Title = "Choose the Source File"
+    .AllowMultiSelect = False
+
+    If .Show = True Then
+        strFile = .SelectedItems(1)
+    End If
+
+End With
+
+'Check if any file was selected
+If strFile = "" Then
+
+    Resp = MsgBox("Please select a valid file.", vbCritical) 'Alert User
+    'Men.Range("E9:E10") = ""                                'Status
+    Exit Sub                                                 'Exit Procedure
+
+End If
+
+''Status
+'Application.ScreenUpdating = True
+'Men.Range("E9") = "Opening Source File"
+Application.ScreenUpdating = False
+
+'Open and set Source File
+Set WbSou = Workbooks.Open(Filename:=strFile)
+Set Sou = WbSou.Sheets(1)
+
+'Check if the source sheet
+If Sou.Range("A1") <> "Employee Number" Then
+    
+    'Alert user
+    Resp = MsgBox("The source file does not look right, the cell ''A1'' in FIRST SHEET must be ''Employee Number''. The process will be canceled.", vbCritical)
+
+    'Exit procedure
+    Exit Sub
+
+End If
+
+'Show all data
+On Error Resume Next
+    Sou.ShowAllData
+On Error GoTo 0
+
+'Create new file for Report
+Set WbRep = Workbooks.Add
+
+'Take last row in souce file
+iMax = Sou.Range("A" & Sou.Rows.Count).End(xlUp).Row
+
+'Loop through Source Sheet
+For i = 2 To iMax
+
+    'Duplicate Template Sheet
+    Wb.Sheets("Template").Copy After:=WbRep.Sheets(WbRep.Sheets.Count)
+    
+    'Set Generic Sheet
+    Set Sht = WbRep.Sheets("Template")
+    
+    'Rename Sheet
+    Sht.Name = Sou.Range("A" & i)
+    
+    Sht.Range("B1") = Sou.Range("C" & i) 'Salary
+    Sht.Range("B2") = Sou.Range("D" & i) 'Salary Values
+    Sht.Range("B3") = Sou.Range("B" & i) 'Employee ID
+    
+    'Set start value to j
+    j = StartRow - 1
+    
+    'Send Salary Values to Json Converter
+    Set JsonResponse = JsonConverter.ParseJson(Sou.Range("D" & i))
+
+    'Loop through Json Response Item
+    For Each JsonItem In JsonResponse
+    
+        j = j + 1                                   'Set row number
+        Sht.Range("A" & j) = JsonItem               'Name of the Item
+        Sht.Range("B" & j) = JsonResponse(JsonItem) 'Value of the Item
+    
+    Next JsonItem
+    
+    'Check if j value is lower than Total Payment Row
+    If j < TotalRow Then
+    
+        j = TotalRow 'Set j to Total Payment Row
+        
+    Else
+    
+        j = j + 2 'Skip one row
+    
+    End If
+    
+    Sht.Range("A" & j) = "Total Payment"            'Total Payment Name
+    Sht.Range("A" & j & ":B" & j).Font.Bold = True  'Set font to Bold
+    
+    Sht.Range("A" & j + 1) = "System Payment"       'System Payment Name
+    Sht.Range("B" & j + 1) = Sou.Range("E" & i)     'System Payment Value
+    
+Next i
+
+Set Sht = Nothing
+
+'--- Clear unnecessary tabs from final report ---
+
+'Loop through all sheets in final report
+For Each Sht In WbRep.Sheets
+
+    'Check if the sheet starts with blank cell
+    If Len(Sht.Range("A1")) = 0 Then
+    
+        'Disable delete warning
+        Application.DisplayAlerts = False
+        
+        'Delete Sheet
+        Sht.Delete
+        
+        'Enable delete warning
+        Application.DisplayAlerts = True
+
+    End If
+
+Next Sht
+
+'Close Source file
+WbSou.Close SaveChanges:=False
+
+'Select Final Report
+Wb.Activate
+Men.Activate
+
+'Enable screen updating
+Application.ScreenUpdating = True
+
+'Alert User
+'MsgBox "Done"
+
+'Select Final Report
+WbRep.Activate
+WbRep.Sheets(1).Activate
+
+'maximize the workbook in Excel
+ActiveWindow.WindowState = xlMaximized
+
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
